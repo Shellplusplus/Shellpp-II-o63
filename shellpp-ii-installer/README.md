@@ -1,20 +1,9 @@
-# Shell++ II Installer
+# Lua 安装器与发布资源
 
-s441 O63（固件 `3.100.028`）的 Shell++ II 安装表盘工程。
+> **仅可安装到 Xiaomi Watch S4 41mm（s441/O63）且系统版本为 3.100.028 的设备。**
 
-## Lua 文件目录
+这是 s441/O63 3.100.028 专用安装器工程。Lua 负责加载模块、恢复状态，并按 LOAD -> restore -> INSTALL 0 -> INSTALL 1 -> INSTALL 2 完成原生 App 与 Launcher 注册。
 
-安装器 Lua 资源必须同时保留在以下两个目录，并保持内容一致：
+_Lua 是编辑器目录，resources/_lua/_Lua 是 manifest 实际打包目录，两份 main.lua 必须字节一致。原生模块和图标由 ../shellpp-ii-build/build.sh 生成并同步，随后重建 resource.bin 和 hashCode。
 
-- `_Lua/`：表盘编辑器使用的资源目录。
-- `resources/_lua/_Lua/`：由 `resources/manifest.xml` 写入 `resource.bin` 的资源目录。
-
-每个目录只能包含以下三个文件：
-
-- `main.lua`
-- `shellpp_ii.bin`
-- `shellpp_ii_icon.bin`
-
-## 所需内容
-
-打包工程需要 `resource.bin`、`resources/manifest.xml`、`uidmap.map`、`capability.json` 和 `hashCode`。原生模块与图标由相邻 `shellpp-ii-build` 仓库执行 `./build.sh` 后更新；Lua 文件由安装器维护，构建脚本不会改写它。构建脚本会在资源同步后重建 `resource.bin` 与 `hashCode`。
+Lua 安装器当前已冻结。除非用户明确要求，不修改版本检测、文件检查、日志或加载流程。

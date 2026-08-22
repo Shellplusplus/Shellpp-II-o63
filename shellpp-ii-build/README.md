@@ -1,32 +1,9 @@
-# Shell++ II Build
+# 构建工具
 
-构建 Shell++ II 的 ARM NuttX 原生模块，并更新同级安装包仓库中的生成资源。
+> **目标唯一固定为 Xiaomi Watch S4 41mm（s441/O63）固件 3.100.028。构建产物不适用于其他设备或版本。**
 
-## 用法
+本目录只构建 s441/O63 3.100.028 原生模块，并生成安装器所需的图标和资源包。执行 ./build.sh。
 
-将本仓库与 `shellpp-ii`、`shellpp-ii-installer` 放在同一目录。需要 macOS、Apple Clang、Rust 工具链（`rust-lld`）、Python 3、Node.js 和 `sips`。
+依赖 macOS Apple Clang、可链接 ARM ELF 的 rust-lld、Python 3、Node.js 和 macOS sips；可用 CLANG、RUST_LLD、PYTHON、NODE 覆盖路径。S441_LOAD_PROBE=1 仅生成入口探针，默认 S441_LOAD_PROBE=2 生成正常模块。
 
-```sh
-./build.sh
-```
-
-默认构建目标为 s441 O63 固件 `3.100.028`，并生成第二阶段最小
-`/dev/shellpp` Supervisor。它只验证已经反汇编确认的模块入口和
-`register_driver` ABI；尚未实现 Lua 控制命令、原生应用或卸载。
-
-```sh
-# 仅在需要重新验证 ET_REL 入口 ABI 时使用。它会替换安装器中的模块。
-S441_LOAD_PROBE=1 ./build.sh
-
-# 默认值；生成最小 Supervisor。
-S441_LOAD_PROBE=2 ./build.sh
-```
-
-- `out/3.100.028/shellpp_ii.bin`：已校验的原生模块。
-- `../shellpp-ii-installer/_Lua/`：编辑器使用的模块和图标。
-- `../shellpp-ii-installer/resources/_lua/_Lua/`：写入 `resource.bin` 的打包资源。
-
-构建会在同步资源后重新生成安装器的 `resource.bin` 与 `hashCode`，因此该目录
-中的安装器工程可直接交给既有表盘安装流程。
-
-可通过 `CLANG`、`RUST_LLD`、`PYTHON` 和 `NODE` 环境变量覆盖工具路径。
+脚本会验证安装器两份 Lua 和 manifest，编译并校验 ELF，生成图标，同步 shellpp_ii.bin 和图标，重建 resource.bin/hashCode。Lua 不由构建脚本修改。

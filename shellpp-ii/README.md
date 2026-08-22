@@ -1,25 +1,9 @@
-# Shell++ II
+# Native Module 源码
 
-Shell++ II 的原生模块源码，当前唯一目标为 s441 O63 固件。
+> **仅支持 Xiaomi Watch S4 41mm / s441 / O63 / 3.100.028；**
 
-## 快速开始
+本目录是 Shell++ II 的 s441 原生模块源码。唯一目标为 Xiaomi Watch S4 41mm / O63 / 3.100.028，对应 AP SHA-256 为 c1a738d70ff5284569439bbcfb1212a94f357cd81c6f715d7a7a34ef0155912a。
 
-在同一个父目录中拉取三个仓库。构建脚本依赖它们的相对位置：
+默认构建入口是 module/src/s441_supervisor_stage1.c。其他 native_app、native_ui 和旧 Supervisor 文件保留作调查及历史参考，不代表其他固件 ABI。
 
-```sh
-git clone https://github.com/Shellplusplus/Shellpp-II-App.git shellpp-ii
-git clone https://github.com/Shellplusplus/Shellpp-II-Build.git shellpp-ii-build
-git clone https://github.com/Shellplusplus/Shellpp-II-install-Lua.git shellpp-ii-installer
-```
-
-构建环境需要 macOS、Apple Clang、Rust 工具链（提供 `rust-lld`）、Python 3、Node.js 和 `sips`。然后执行：
-
-```sh
-cd shellpp-ii-build
-./build.sh
-```
-
-构建产物为 `out/3.100.028/shellpp_ii.bin`。默认构建的是 s441 第二阶段最小
-Supervisor，只注册 `/dev/shellpp` 以验证已确认的加载 ABI；它不会执行 Lua
-命令或安装原生应用。脚本会同时更新相邻 `shellpp-ii-installer` 仓库中的原生
-模块和图标资源。打包器负责随后更新 `resource.bin` 与 `hashCode`。
+编译从同级 shellpp-ii-build 执行 ./build.sh。源码直接调用固件专用的 Native App、Activity Manager 和 Launcher 入口；地址与 descriptor 说明见 ../docs/firmware-abi.md。注册后的 descriptor 和引用数据必须位于永久可写存储，不能使用临时栈对象。
