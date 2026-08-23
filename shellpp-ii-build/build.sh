@@ -15,7 +15,7 @@ INSTALLER_PACKAGED_DIR="$INSTALLER_DIR/resources/_lua/_Lua"
 INSTALLER_MANIFEST="$INSTALLER_DIR/resources/manifest.xml"
 # This is the synchronized s441-only installer sequence.  Build stages 2+
 # refuse to overwrite a Lua payload that differs from this reviewed copy.
-FROZEN_LUA_SHA256=0ea870b9c66911ac30fec16c3b036b04c320941a7c0feb5f263f99aa8dcf6cd5
+FROZEN_LUA_SHA256=e4825b22cc8932a41373fb82b873b923b21000a53dd4611b48b60a5dd74f7e11
 
 . "$TARGET_ENV"
 

@@ -47,6 +47,12 @@ FIRMWARE_FUNCTIONS: set[int] = {
     0x0C63B391,  # native_app_register_core
     0x0C639BA9,  # native App ID lookup used for post-registration proof
     0x0C412425,  # app_launcher_add
+    0x0C4C9AF1,  # LVX label create
+    0x0C4CCB91,  # LVX label text setter
+    0x0C41C6F9,  # LVX object align
+    0x0C41C735,  # LVX object width setter
+    0x0C41CA11,  # LVX text color setter
+    0x0C41CF71,  # LVX text alignment setter
 }
 # Confirmed AP RAM globals/objects keep their runtime addresses when accessed
 # by an ET_REL module. Only AP flash code uses the 0x0c... module alias.

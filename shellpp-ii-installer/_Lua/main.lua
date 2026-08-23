@@ -15,7 +15,7 @@ local DEVICE_PATH = "/dev/shellpp"
 local STATUS_SIZE = 384
 local EXPECTED_MAGIC = 0x53505331 -- Shell++ status/control magic
 local EXPECTED_STATUS_ABI = 2
-local EXPECTED_BUILD_MARKER = 0x53494932
+local EXPECTED_BUILD_MARKER = 0x53494937
 local EXPECTED_CMD_MAGIC = 0x53505331 -- Shell++ control magic
 local CMD_INSTALL = 0x53510002
 local CMD_NOTIFY_LOADED = 0x53510004
@@ -33,6 +33,8 @@ local function describe_error(code)
         return "invalid supervisor command"
     elseif code == -19 then
         return "App-install queue is unavailable"
+    elseif code == -101 then
+        return "App ID 0x00CD is occupied by another package"
     end
     return "error " .. tostring(code)
 end
@@ -279,8 +281,40 @@ local function start_run_timer()
     return true
 end
 
+local SHELLPP_PERSISTENT_PATHS = {
+    "/data/shellpp-ii",
+    "/data/shellpp-ii-supervisor.log",
+    "/data/term_out.txt",
+    "/data/h69_dbg.txt",
+    "/data/h71_obj.txt",
+    "/data/h72_res.txt",
+    "/data/h74_read.txt",
+}
+
+local function path_exists(path)
+    local file = io.open(path, "rb")
+    if file then file:close(); return true end
+    -- io.open() cannot reliably identify directories on every Vela build.
+    local ok = os.execute("test -e " .. shell_quote(path))
+    return ok == true or ok == 0
+end
+
 local function clear_shellpp_environment()
-    return run("rm -rf /data/shellpp-ii")
+    local quoted = {}
+    for index, path in ipairs(SHELLPP_PERSISTENT_PATHS) do
+        quoted[index] = shell_quote(path)
+    end
+    if not run("rm -rf " .. table.concat(quoted, " ")) then
+        return false, "remove command failed"
+    end
+    local remaining = {}
+    for _, path in ipairs(SHELLPP_PERSISTENT_PATHS) do
+        if path_exists(path) then remaining[#remaining + 1] = path end
+    end
+    if #remaining > 0 then
+        return false, "still exists: " .. table.concat(remaining, ", ")
+    end
+    return true
 end
 
 local rootbase = lvgl.Object(nil, {
@@ -385,15 +419,14 @@ make_button("Uninstall", -48, 0x8A1F14, function()
         set_status("An installer operation is in progress", 0xFFD27A)
         return
     end
-    local ok, message = write_command(CMD_UNINSTALL, 0)
-    if not ok then set_status("Uninstall command failed: " .. tostring(message), 0xFF9A9A); return end
-    local current, status_error = read_status()
-    if not current then set_status("Uninstall status failed: " .. tostring(status_error), 0xFF9A9A); return end
-    if current.pending_state == RESULT_COMPLETED then
-        if clear_shellpp_environment() then set_status("Data cleared; reboot required", 0x8FF0A4)
-        else set_status("Data cleanup failed; reboot required", 0xFF9A9A) end
+    local cleared, clear_error = clear_shellpp_environment()
+    if cleared then
+        -- The Supervisor and Launcher callbacks reside in RAM only. After
+        -- reboot, NuttX drops the module and the Launcher entry with it.
+        set_status("Uninstalled; rebooting...", 0x8FF0A4)
+        run("reboot")
     else
-        set_status("Uninstall refused: error=" .. tostring(current.error_code) .. "; reboot required", 0xFFD27A)
+        set_status("Uninstall failed: " .. tostring(clear_error), 0xFF9A9A)
     end
 end)
 
@@ -409,10 +442,12 @@ make_button("Clear Env", 16, 0x65451A, function()
         return
     end
     clear_armed = false
-    if clear_shellpp_environment() then
-        set_status("Environment files cleared; reboot required", 0x8FF0A4)
+    local cleared, clear_error = clear_shellpp_environment()
+    if cleared then
+        set_status("Environment cleared; rebooting...", 0x8FF0A4)
+        run("reboot")
     else
-        set_status("Clear Env failed", 0xFF9A9A)
+        set_status("Clear Env failed: " .. tostring(clear_error), 0xFF9A9A)
     end
 end)
 
