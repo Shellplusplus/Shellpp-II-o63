@@ -151,5 +151,5 @@ build.sh
 -101  App ID 0x00CD 属于其他 package
 15    pending_state=FAILED，需结合 error/register/launcher/queue
 ```
-
+-100可能是设备问题，恢复出厂大概率会解决问题。
 register=0 不能单独解释为注册失败；launcher=0 也必须结合当前阶段和 launcher_published 判断。
