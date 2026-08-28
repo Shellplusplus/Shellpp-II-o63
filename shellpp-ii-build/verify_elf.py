@@ -47,16 +47,56 @@ FIRMWARE_FUNCTIONS: set[int] = {
     0x0C63B391,  # native_app_register_core
     0x0C639BA9,  # native App ID lookup used for post-registration proof
     0x0C412425,  # app_launcher_add
+    0x0C60F3AD,  # Activity Manager close current page/by combined App/Page ID
+    0x0C63E831,  # miwear_system_reboot(tag)
     0x0C4C9AF1,  # LVX label create
     0x0C4CCB91,  # LVX label text setter
     0x0C41C6F9,  # LVX object align
+    0x0C41E155,  # LVX object align_to(object, base, align, x, y)
     0x0C41C735,  # LVX object width setter
+    0x0C41C7AF,  # LVX object size setter
+    0x0C41AD21,  # LVGL object add flags (hidden state)
+    0x0C41AFD9,  # LVGL object clear flags (hidden state)
     0x0C41CA11,  # LVX text color setter
     0x0C41CF71,  # LVX text alignment setter
+    0x0C533D11,  # read computed text font from a native O63 style source
+    0x0C41CF45,  # LVX text font setter
+    0x0C41C869,  # LVX background color setter
+    0x0C41C889,  # LVX background opacity setter
+    0x0C41C921,  # LVX corner-radius setter
+    0x0C417E0D,  # LVX event listener registration
+    0x0C51F9B9,  # O63 native action-row create(parent)
+    0x0C52E1A1,  # O63 native row init, seven-argument ABI
+    0x0C52702D,  # O63 native row text/state update
+    0x0C38903B,  # LVX page-content container creation
+    0x0C4547AD,  # O63 styled page-content helper(parent, width, height)
+    0x0C5274E9,  # LVX page title creation (root, title, mode, callback, ctx)
+    0x0C545E6D,  # O63 foreground create_toast, five-argument ABI
+    0x0C643DE5,  # notification insert public 0x58-byte descriptor
+    0x0C643EED,  # enable/disable O63 foreground-reminder event listener
+    0x0C54E519,  # open
+    0x0C54E2FB,  # read
+    0x0C54E33D,  # close
+    0x0C1FDD51,  # opendir wrapper
+    0x0C1FDD89,  # closedir wrapper
+    0x0C1FDDB1,  # readdir wrapper
+    0x0C60F0F9,  # Activity Manager activation by combined App/Page ID
 }
 # Confirmed AP RAM globals/objects keep their runtime addresses when accessed
 # by an ET_REL module. Only AP flash code uses the 0x0c... module alias.
-FIRMWARE_DATA: set[int] = {0x3C2E94C0, 0x3C2040D0, 0x3C203FF4, 0x3C2FE2D0}
+FIRMWARE_DATA: set[int] = {
+    0x3C2E94C0,
+    0x3C2E8E5C,  # notification reminder host pointer
+    0x3C2040D0,
+    0x3C203FF4,
+    0x3C2FE2D0,
+    0x3C2D4E90,  # O63 explanatory-page body-text style source
+}
+# Encoded LVGL coordinates are immediate values, not pointers. O63 passes
+# LV_SIZE_CONTENT to both dimensions of the page-content helper at 0x2C496214.
+LVGL_COORDINATES: set[int] = {
+    0x200007D1,  # LV_SIZE_CONTENT
+}
 
 
 class VerificationError(Exception):
@@ -180,7 +220,9 @@ def verify_absolute_addresses(
                 if 0x3C000000 <= value < 0x3D000000 and value not in FIRMWARE_DATA:
                     fail("unverified s441 runtime data at " + location
                          + ": 0x" + format(value, "08x"))
-                if 0x20000000 <= value < 0x21000000 and value not in FIRMWARE_DATA:
+                if (0x20000000 <= value < 0x21000000
+                        and value not in FIRMWARE_DATA
+                        and value not in LVGL_COORDINATES):
                     fail("unverified s441 module-runtime data at "
                          + location + ": 0x" + format(value, "08x"))
 
@@ -368,6 +410,19 @@ def parse_elf(path: Path) -> tuple[bytes, dict[str, int], list[Section], list[El
             if relocation_type not in allowed_types:
                 fail("unsupported relocation type " + str(relocation_type)
                      + " in " + section.name)
+            if (
+                target_section.name == ".data"
+                and relocation_type == R_ARM_ABS32
+                and symbol_index
+                and (symbols[symbol_index].info & 0x0F) == STT_FUNC
+            ):
+                fail(
+                    "static local function pointer is unsafe on s441: "
+                    + symbols[symbol_index].name
+                    + " at .data+0x"
+                    + format(relocation_offset, "x")
+                    + "; initialize it at runtime with Thumb bit 0 set"
+                )
             relocations.add(relocation_type)
 
     metadata = {

@@ -1,41 +1,16 @@
 #include "shellpp_ii_module.h"
+#include "s441_firmware_abi.h"
+#include "s441_native_ui.h"
 
-/* Exact O63/s441 3.100.028 only. AP code uses the module flash alias;
- * AP RAM globals and static runtime objects retain their 0x3c... addresses. */
-typedef int (*register_driver_t)(const char *, const void *, unsigned int);
-typedef int (*app_register_t)(const void *, void *const *, unsigned int);
-typedef void (*launcher_add_t)(unsigned short);
-typedef void *(*app_lookup_t)(unsigned short);
 typedef int (*async_queue_init_t)(void *, void *, void (*)(void *, void *));
 typedef int (*async_queue_submit_t)(void *, void *);
-typedef void *(*lvx_label_create_t)(void *parent);
-typedef void (*lvx_label_set_text_t)(void *label, const char *text);
-typedef void (*lvx_object_align_t)(void *object, unsigned int alignment,
-    int x_offset, int y_offset);
-typedef void (*lvx_object_set_width_t)(void *object, int width);
-typedef void (*lvx_object_set_text_color_t)(void *object, unsigned int color,
-    unsigned int selector);
-typedef void (*lvx_object_set_text_align_t)(void *object,
-    unsigned int alignment, unsigned int selector);
-struct page_descriptor;
-typedef void (*page_create_t)(struct page_descriptor *, void *, void *);
-typedef void (*page_cleanup_t)(struct page_descriptor *);
-
-#define REGISTER_DRIVER ((register_driver_t)0x0c6fe05du)
-#define APP_REGISTER ((app_register_t)0x0c63b391u)
-#define LAUNCHER_ADD ((launcher_add_t)0x0c412425u)
-#define APP_LOOKUP ((app_lookup_t)0x0c639ba9u)
+#define REGISTER_DRIVER S441_REGISTER_DRIVER
+#define APP_REGISTER S441_APP_REGISTER
+#define LAUNCHER_ADD S441_LAUNCHER_ADD
+#define APP_LOOKUP S441_APP_LOOKUP
 #define ASYNC_QUEUE_INIT ((async_queue_init_t)0x0c31afd5u)
 #define ASYNC_QUEUE_SUBMIT ((async_queue_submit_t)0x0c31b0cdu)
-#define LVX_LABEL_CREATE ((lvx_label_create_t)0x0c4c9af1u)
-#define LVX_LABEL_SET_TEXT ((lvx_label_set_text_t)0x0c4ccb91u)
-#define LVX_OBJECT_ALIGN ((lvx_object_align_t)0x0c41c6f9u)
-#define LVX_OBJECT_SET_WIDTH ((lvx_object_set_width_t)0x0c41c735u)
-#define LVX_OBJECT_SET_TEXT_COLOR ((lvx_object_set_text_color_t)0x0c41ca11u)
-#define LVX_OBJECT_SET_TEXT_ALIGN ((lvx_object_set_text_align_t)0x0c41cf71u)
-#define APP_INSTALL_LOOP (*(void * volatile *)0x3c2e94c0u)
-#define PAGE_PROTOTYPE ((void *)0x3c2040d0u)
-#define PAGE_ACTIVITY_API ((void *)0x3c203ff4u)
+#define APP_INSTALL_LOOP S441_APP_INSTALL_LOOP
 #define MAGIC 0x53505331u
 #define STATUS_ABI 2u
 #define BUILD_MARKER 0x53494937u
@@ -47,47 +22,44 @@ typedef void (*page_cleanup_t)(struct page_descriptor *);
 #define CMD_UNINSTALL 0x53510003u
 #define CMD_NOTIFY_LOADED 0x53510004u
 #define CMD_RESTORE_AFTER_BOOT 0x5351000au
-#define APP_ID 0x00cdu
-#define ALIGN_TOP_LEFT 1u
-#define TEXT_ALIGN_CENTER 1u
-#define STYLE_SELECTOR_DEFAULT 0u
-#define HOME_LABEL_WIDTH 0x15eu
-#define HOME_LABEL_X 0x44
-#define HOME_LABEL_Y 0x70
-#define COLOR_TEXT_DARK 0x00666666u
+#define APP_ID S441_APP_ID
+#define NOTIFICATION_UID_LOW (((uint32_t)APP_ID << 16) | 1u)
 
 struct file_operations { void *open; void *close; void *read; void *write; void *reserved[16]; };
-struct app_descriptor {
-    void *prev; void *next; const char *package_name; const char *app_path;
-    unsigned short app_id; unsigned short app_flags; const char *name_resource; const char *icon_resource;
-    const char *(*display_name)(struct app_descriptor *); void *private_20; void *pre_unregister;
-    void *release_runtime; void *query_state; void *page_table; void *secondary_page_table;
-    void *lifecycle; unsigned int state_flags;
-};
-struct page_descriptor {
-    void *prototype; unsigned int reserved_04; unsigned int reserved_08; unsigned int reserved_0c;
-    const char *page_name; unsigned short page_id; unsigned short app_id; unsigned int flags_18;
-    unsigned int reserved_1c; unsigned int reserved_20; unsigned int manager_refcount;
-    unsigned char state_28; unsigned char state_29; unsigned char type_2a; unsigned char reserved_2b;
-    void *activity_api; void *root_object; void (*lifecycle)(struct page_descriptor *, unsigned int, unsigned int);
-    void *default_context; unsigned int reserved_3c; void *prev; void *next; void *object_api;
-    page_create_t callback_4c; void *callback_50; void *callback_54; void *callback_58; void *callback_5c;
-    void *callback_60; page_cleanup_t callback_64; void *callback_68; void *callback_6c; unsigned int reserved_70;
-};
-typedef char app_descriptor_size[(sizeof(struct app_descriptor) == 0x40u) ? 1 : -1];
-typedef char page_descriptor_size[(sizeof(struct page_descriptor) == 0x74u) ? 1 : -1];
-
 static const char device_path[] = "/dev/shellpp";
 static const char package_name[] = "com.shellpp.ii";
-/* O63 built-in App descriptors store the Launcher bitmap path at +0x0C. */
-static const char app_path[] = "/data/shellpp-ii/shellpp_ii_icon.bin";
-static const char display_name[] = "Shell++ II";
-static const char page_name[] = "shellpp-home";
-static const char home_text[] = "Shell++ II\nNative UI online\nWatch S4 41mm / 3.100.028";
+static const char notification_title[] = "Shell++ II";
+static const char notification_body[] = "Native tools are ready";
+static const char notification_icon[] =
+    "/resource/app/notifications/default.bin";
+static const char notification_small_icon[] =
+    "/resource/app/notifications/default_small.bin";
+/* Match the complete O63 system-notification descriptor shape. */
+static struct s441_notification_descriptor loaded_notification = {
+    .uid_low = NOTIFICATION_UID_LOW,
+    .uid_high = 0u,
+    /* O63 built-in templates leave +0x08 zero and store the user-visible
+     * application/source name at +0x0C. Package identity is not read here. */
+    .message_id = 0u,
+    .string_0c = notification_title,
+    .string_10 = notification_title,
+    .string_14 = notification_body,
+    .string_1c = notification_icon,
+    .string_20 = notification_small_icon,
+    .reserved_34 = 0x00999999u,
+    .reserved_38 = 0u,
+    .foreground_alert = 1u,
+};
 static volatile unsigned int pending_command, pending_stage, pending_state;
 static volatile int last_error;
 static volatile unsigned int driver_registered, request_busy, app_registered, launcher_published, loaded_notified;
+static volatile unsigned int notification_requested;
 static volatile int registration_result, launcher_result, queue_result;
+static volatile int notification_result;
+static volatile int toast_result;
+static volatile unsigned int notification_dispatch_count;
+static volatile unsigned int notification_message_address;
+static volatile unsigned int notification_listener_enabled;
 static volatile unsigned int queue_pending;
 static volatile unsigned int direct_context_used;
 static unsigned char status[STATUS_SIZE] __attribute__((aligned(4)));
@@ -96,55 +68,22 @@ static unsigned char status[STATUS_SIZE] __attribute__((aligned(4)));
  * queue layout. */
 static unsigned char app_queue[0x80] __attribute__((aligned(8)));
 static volatile unsigned int app_queue_ready, app_queue_failed;
-static void *home_root;
-static void *home_label;
 struct queued_request { unsigned int command; unsigned int stage; };
 static struct queued_request queued_request;
 
 static void finish_request(int error);
 static int ensure_app_queue(void);
+static int publish_loaded_notification(void);
 
-static const char *get_display_name(struct app_descriptor *app) { (void)app; return display_name; }
-static void shellpp_home_create(struct page_descriptor *page_runtime, void *root,
-    void *start_data) {
-    void *label;
-    (void)page_runtime;
-    (void)start_data;
-    if (root == 0) return;
-    if (home_root == root && home_label != 0) return;
-    label = LVX_LABEL_CREATE(root);
-    if (label == 0) return;
-    LVX_OBJECT_SET_WIDTH(label, HOME_LABEL_WIDTH);
-    LVX_OBJECT_SET_TEXT_COLOR(label, COLOR_TEXT_DARK,
-        STYLE_SELECTOR_DEFAULT);
-    LVX_OBJECT_SET_TEXT_ALIGN(label, TEXT_ALIGN_CENTER,
-        STYLE_SELECTOR_DEFAULT);
-    LVX_OBJECT_ALIGN(label, ALIGN_TOP_LEFT, HOME_LABEL_X, HOME_LABEL_Y);
-    LVX_LABEL_SET_TEXT(label, home_text);
-    home_root = root;
-    home_label = label;
+static void *thumb_callback(const void *callback) {
+    return (void *)(((uintptr_t)callback) | (uintptr_t)1u);
 }
-static void shellpp_home_cleanup(struct page_descriptor *page_runtime) {
-    (void)page_runtime;
-    home_root = 0;
-    home_label = 0;
-}
-static struct app_descriptor app = { .package_name = package_name, .app_path = app_path, .app_id = APP_ID, .display_name = get_display_name };
-static struct page_descriptor page = {
-    .prototype = PAGE_PROTOTYPE,
-    .page_name = page_name,
-    .app_id = APP_ID,
-    .state_29 = 5u,
-    .activity_api = PAGE_ACTIVITY_API,
-    .callback_4c = shellpp_home_create,
-    .callback_64 = shellpp_home_cleanup,
-};
-static void *pages[] = { &page };
 
 static int open_device(void *filep) { (void)filep; return 0; }
 static int close_device(void *filep) { (void)filep; return 0; }
 static void clear_status(void) { unsigned int i; for (i = 0; i < STATUS_SIZE; ++i) status[i] = 0; }
 static int read_device(void *filep, char *buffer, unsigned int count) {
+    const struct s441_ui_diagnostics *ui;
     unsigned int i; int dispatch_result; (void)filep; if (buffer == 0 || count < STATUS_SIZE) return -22;
     /* The App-install loop is created asynchronously during AP startup. A
      * missing loop is retryable; preserve the already-owned request and
@@ -175,6 +114,37 @@ static int read_device(void *filep, char *buffer, unsigned int count) {
     *(unsigned int *)(void *)(status + 0x54) = queue_pending;
     *(unsigned int *)(void *)(status + 0x58) = app_queue_failed;
     *(unsigned int *)(void *)(status + 0x5c) = direct_context_used;
+    *(int *)(void *)(status + 0x60) = notification_result;
+    ui = s441_ui_diagnostics();
+    if (ui) {
+        *(unsigned int *)(void *)(status + 0x64) = ui->page_create_count;
+        *(unsigned int *)(void *)(status + 0x68) = ui->click_count;
+        *(unsigned int *)(void *)(status + 0x6c) = ui->last_action;
+        *(unsigned int *)(void *)(status + 0x70) = ui->last_page;
+        *(int *)(void *)(status + 0x74) = ui->last_result;
+        *(unsigned int *)(void *)(status + 0x80) = ui->row_create_count;
+        *(unsigned int *)(void *)(status + 0x84) =
+            ui->row_create_failures;
+    }
+    *(unsigned int *)(void *)(status + 0x78) = notification_requested;
+    *(unsigned int *)(void *)(status + 0x7c) = 0u;
+    *(unsigned int *)(void *)(status + 0x88) =
+        notification_dispatch_count;
+    *(unsigned int *)(void *)(status + 0x8c) =
+        notification_message_address;
+    *(unsigned int *)(void *)(status + 0xa0) =
+        notification_listener_enabled;
+    *(int *)(void *)(status + 0xa4) = toast_result;
+    if (ui) {
+        *(unsigned int *)(void *)(status + 0x90) = ui->last_root;
+        *(unsigned int *)(void *)(status + 0x94) = ui->last_title;
+        *(unsigned int *)(void *)(status + 0x98) = ui->last_content;
+        *(unsigned int *)(void *)(status + 0x9c) = ui->last_row;
+        *(unsigned int *)(void *)(status + 0xa8) = ui->toast_create_count;
+        *(unsigned int *)(void *)(status + 0xac) =
+            ui->toast_create_failures;
+        *(unsigned int *)(void *)(status + 0xb0) = ui->last_toast_root;
+    }
     for (i = 0; i < STATUS_SIZE; ++i) buffer[i] = (char)status[i]; return (int)STATUS_SIZE;
 }
 static void finish_request(int error) { last_error = error; pending_state = error ? RESULT_FAILED : RESULT_COMPLETED; request_busy = 0u; }
@@ -185,10 +155,39 @@ static int string_equal(const char *left, const char *right) {
     return 1;
 }
 static int app_registration_state(void) {
-    const struct app_descriptor *registered =
-        (const struct app_descriptor *)APP_LOOKUP(APP_ID);
+    const struct s441_app_descriptor *registered =
+        (const struct s441_app_descriptor *)APP_LOOKUP(APP_ID);
     if (registered == 0) return 0;
     return string_equal(registered->package_name, package_name) ? 1 : -1;
+}
+static int publish_loaded_notification(void) {
+    void *message;
+    if (!notification_requested || loaded_notified) return 0;
+    loaded_notification.foreground_alert = 1u;
+    loaded_notification.manager_state_51 = 0u;
+    loaded_notification.manager_state_52 = 0u;
+    s441_ui_prepare_loaded_notification(&loaded_notification);
+    /* The notification app normally enables this listener during its own
+     * page lifecycle. The installer can run before that page was ever opened,
+     * so enable the idempotent O63 reminder consumer before publishing the
+     * foreground event generated by notification_insert(). */
+    S441_NOTIFICATION_REMINDER_LISTENER(1u);
+    notification_listener_enabled = 1u;
+    message = S441_NOTIFICATION_INSERT(&loaded_notification);
+    notification_result = message ? 1 : -102;
+    if (!message) {
+        return -102;
+    }
+    notification_message_address = (unsigned int)(uintptr_t)message;
+    ++notification_dispatch_count;
+    toast_result = s441_ui_show_loaded_toast();
+    if (toast_result != 0) {
+        notification_result = -103;
+        return -103;
+    }
+    notification_result = 1;
+    loaded_notified = 1u;
+    return 0;
 }
 /* LuaLVGL Timer callbacks run on miwear's AP/UI task.  NuttX VFS invokes a
  * character driver's write method synchronously in the calling task, so the
@@ -196,9 +195,22 @@ static int app_registration_state(void) {
  * Do not use the Quick App watcher loop: it is unrelated to this App. */
 static int execute_native_stage(unsigned int command, unsigned int stage) {
     int error = 0;
-    if (command == CMD_INSTALL && stage == 1u) {
+    if (command == CMD_NOTIFY_LOADED) {
+        /* Lua intentionally sends NOTIFY before INSTALL 0/1/2. Preserve that
+         * public sequence while waiting for the App and Launcher records. */
+        notification_requested = 1u;
+        /* A fresh installer Run is an explicit request for another foreground
+         * reminder. Do not let a previous resident-module success suppress it. */
+        loaded_notified = 0u;
+        notification_result = 0;
+        toast_result = 0;
+        notification_message_address = 0u;
+        if (launcher_published && !loaded_notified)
+            error = publish_loaded_notification();
+    } else if (command == CMD_INSTALL && stage == 1u) {
         if (!app_registered) {
-            registration_result = APP_REGISTER(&app, pages, 1u);
+            registration_result = APP_REGISTER(s441_ui_app_descriptor(),
+                s441_ui_pages(), s441_ui_page_count());
             /* The return register is not a normalized ABI.  The registry
              * lookup is the only accepted success condition. */
             int state = app_registration_state();
@@ -210,7 +222,18 @@ static int execute_native_stage(unsigned int command, unsigned int stage) {
         int state = app_registration_state();
         if (!app_registered || state == 0) error = -100;
         else if (state < 0) error = -101;
-        else if (!launcher_published) { LAUNCHER_ADD(APP_ID); launcher_result = 0; launcher_published = 1u; }
+        else {
+            if (!launcher_published) {
+                LAUNCHER_ADD(APP_ID);
+                launcher_result = 0;
+                launcher_published = 1u;
+            }
+            /* Keep Launcher publication and notification insertion in the
+             * same proven App/UI execution transaction. A NULL notification
+             * result makes INSTALL 2 fail instead of reporting false success. */
+            notification_requested = 1u;
+            if (!loaded_notified) error = publish_loaded_notification();
+        }
     } else if (command == CMD_UNINSTALL) {
         /* Only page_unregister is known.  No App-registry removal ABI has
          * been recovered, so detaching this page would leave an App/Launcher
@@ -234,7 +257,9 @@ static int ensure_app_queue(void) {
     if (loop == 0) return 1;
     /* init(loop, queue_storage, callback): the first argument is the
      * firmware-owned App-install uv_loop_t. */
-    queue_result = ASYNC_QUEUE_INIT(loop, app_queue, execute_on_app_loop);
+    queue_result = ASYNC_QUEUE_INIT(loop, app_queue,
+        (void (*)(void *, void *))thumb_callback(
+            (const void *)execute_on_app_loop));
     if (queue_result != 0) { app_queue_failed = 1u; return queue_result; }
     app_queue_ready = 1u;
     return 0;
@@ -250,11 +275,9 @@ static int write_device(void *filep, const char *buffer, unsigned int count) {
     const unsigned int *words; (void)filep; if (buffer == 0 || count < 16u) return -22;
     words = (const unsigned int *)(const void *)buffer; if (words[0] != MAGIC) return -22; if (request_busy) return -16;
     pending_command = words[1]; pending_stage = words[2];
-    /* These phases only update Supervisor state and must not wait for the
-     * firmware App-install loop. Native registration begins at INSTALL 1. */
-    if (words[1] == CMD_NOTIFY_LOADED) {
-        loaded_notified = 1u; last_error = 0; pending_state = RESULT_COMPLETED; return 16;
-    }
+    /* Restore and INSTALL 0 only update Supervisor state. Native/App UI
+     * operations, including the loaded notification, use the common dispatch
+     * path below. */
     if (words[1] == CMD_RESTORE_AFTER_BOOT) {
         last_error = 0; pending_state = RESULT_COMPLETED; return 16;
     }
@@ -268,12 +291,21 @@ static int write_device(void *filep, const char *buffer, unsigned int count) {
      * watcher is absent, so its loop global remains NULL. The VFS write is
      * synchronous in that same AP task; execute there instead of waiting for
      * a loop that this firmware instance never creates. */
-    if (APP_INSTALL_LOOP == 0) (void)execute_direct_request();
+    if (APP_INSTALL_LOOP == 0) {
+        /* LuaLVGL invokes this VFS write synchronously on the AP UI task on
+         * O63. Keep the proven fallback for builds where the optional install
+         * loop global is absent; when present, all work is submitted to it. */
+        (void)execute_direct_request();
+    }
     return 16;
 }
-static struct file_operations fops = { .open = (void *)open_device, .close = (void *)close_device, .read = (void *)read_device, .write = (void *)write_device, .reserved = {0} };
+static struct file_operations fops;
 int module_initialize(struct shellpp_ii_mod_info *modinfo) {
     int result; if (modinfo == 0) return -22; modinfo->uninitializer = 0; modinfo->arg = 0; modinfo->exports = 0; modinfo->nexports = 0;
+    fops.open = thumb_callback((const void *)open_device);
+    fops.close = thumb_callback((const void *)close_device);
+    fops.read = thumb_callback((const void *)read_device);
+    fops.write = thumb_callback((const void *)write_device);
     result = REGISTER_DRIVER(device_path, &fops, 0666u); if (result < 0) { last_error = result; pending_state = RESULT_FAILED; return result; }
     driver_registered = 1u; pending_state = RESULT_COMPLETED; return 0;
 }

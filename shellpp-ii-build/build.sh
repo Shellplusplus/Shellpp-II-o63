@@ -46,6 +46,17 @@ if [ ! -x "$LLD_BIN" ]; then
     echo "Set RUST_LLD to an ARM-capable lld binary." >&2
     exit 1
 fi
+
+# rustup's macOS lld wrapper may not encode an rpath for the libLLVM.dylib
+# shipped beside the toolchain. Discover that directory without requiring a
+# machine-wide DYLD_LIBRARY_PATH setting.
+S441_LLD_LIBRARY_DIR=${S441_LLD_LIBRARY_DIR:-}
+if [ -z "$S441_LLD_LIBRARY_DIR" ]; then
+    lld_candidate_dir=$(CDPATH= cd -- "$(dirname -- "$LLD_BIN")/../../../.." 2>/dev/null && pwd || true)
+    if [ -n "$lld_candidate_dir" ] && [ -f "$lld_candidate_dir/libLLVM.dylib" ]; then
+        S441_LLD_LIBRARY_DIR=$lld_candidate_dir
+    fi
+fi
 if [ ! -x "$PYTHON_BIN" ]; then
     echo "python not executable: $PYTHON_BIN" >&2
     exit 1
@@ -157,6 +168,8 @@ fi
 OUT_DIR="$SCRIPT_DIR/out/$TARGET_ID"
 MODULE_PATH="$OUT_DIR/shellpp_ii.bin"
 MODULE_OBJECT="$OUT_DIR/supervisor.o"
+NATIVE_FS_OBJECT="$OUT_DIR/s441_native_fs.o"
+NATIVE_UI_OBJECT="$OUT_DIR/s441_native_ui.o"
 PRELUDE_OBJECT="$OUT_DIR/module_prelude.o"
 
 mkdir -p "$OUT_DIR"
@@ -193,10 +206,11 @@ case "$S441_LOAD_PROBE" in
         LINK_OBJECTS="$PRELUDE_OBJECT $MODULE_OBJECT"
         ;;
     2)
-        # Stage 2: a permanent, inert control device.  It deliberately has
-        # no dependencies on the inherited 10 Pro Supervisor or native app.
+        # Stage 2: the s441-only Supervisor plus the proven native App UI.
         compile_source "$SOURCE_DIR/src/s441_supervisor_stage1.c" "$MODULE_OBJECT"
-        LINK_OBJECTS="$MODULE_OBJECT"
+        compile_source "$SOURCE_DIR/src/s441_native_fs.c" "$NATIVE_FS_OBJECT"
+        compile_source "$SOURCE_DIR/src/s441_native_ui.c" "$NATIVE_UI_OBJECT"
+        LINK_OBJECTS="$MODULE_OBJECT $NATIVE_FS_OBJECT $NATIVE_UI_OBJECT"
         ;;
     *)
         echo "unsupported S441_LOAD_PROBE stage: $S441_LOAD_PROBE" >&2
@@ -205,14 +219,26 @@ case "$S441_LOAD_PROBE" in
         ;;
 esac
 
-"$LLD_BIN" \
-    -m armelf \
-    -r \
-    -T "$SCRIPT_DIR/shellpp_ii.ld" \
-    -e module_initialize \
-    -u module_initialize \
-    -o "$MODULE_PATH" \
-    $LINK_OBJECTS
+if [ -n "$S441_LLD_LIBRARY_DIR" ]; then
+    env DYLD_LIBRARY_PATH="$S441_LLD_LIBRARY_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+        "$LLD_BIN" \
+        -m armelf \
+        -r \
+        -T "$SCRIPT_DIR/shellpp_ii.ld" \
+        -e module_initialize \
+        -u module_initialize \
+        -o "$MODULE_PATH" \
+        $LINK_OBJECTS
+else
+    "$LLD_BIN" \
+        -m armelf \
+        -r \
+        -T "$SCRIPT_DIR/shellpp_ii.ld" \
+        -e module_initialize \
+        -u module_initialize \
+        -o "$MODULE_PATH" \
+        $LINK_OBJECTS
+fi
 
 "$PYTHON_BIN" "$SCRIPT_DIR/verify_elf.py" \
     --max-loaded-size "$MAX_LOADED_SIZE" \
